@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+.env.local
+.env*.local
+*.log
+.DS_Store
+next-env.d.ts
+
+.vercel
+
+# Gerado automaticamente pelo postinstall (npm install)
+public/ffmpeg
+
+# build info do TypeScript
+*.tsbuildinfo
