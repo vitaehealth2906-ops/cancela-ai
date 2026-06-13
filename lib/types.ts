@@ -42,3 +42,22 @@ export interface Analise {
   achados: Achado[];
   melhorias: string[];
 }
+
+// --- Refino conversacional da persona ---
+export interface Mudanca {
+  campo: string; // "resumo" | "valores" | "sensibilidades" | "narrativas"
+  resumo: string; // o que mudou, em 1 frase
+}
+
+export interface TurnoRefino {
+  autor: "criador" | "consultor";
+  texto: string;
+}
+
+// --- Erros amigáveis na UI ---
+export interface ErroUX {
+  codigo: string;
+  titulo: string;
+  corpo: string;
+  acao?: string;
+}

@@ -4,16 +4,62 @@
 
 :root {
   color-scheme: light;
+  --paper: #faf8f4;
+  --surface: #ffffff;
+  --sunken: #f4f1eb;
+  --stone-100: #f0ede6;
+  --stone-200: #e5e1d8;
+  --stone-300: #d2ccc0;
+  --stone-400: #a8a096;
+  --stone-500: #7a7268;
+  --stone-600: #5c554c;
+  --stone-700: #43403a;
+  --ink: #26231f;
+  --brand-50: #eef0fb;
+  --brand-100: #dde1f6;
+  --brand-200: #bcc3ee;
+  --brand-500: #4f46e5;
+  --brand-600: #4338ca;
+  --brand-700: #3730a3;
+  --brand-900: #1e1b4b;
+  --shadow-focus: 0 0 0 3px var(--brand-200);
 }
 
 html,
 body {
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--paper);
+  color: var(--ink);
+  background-image: radial-gradient(1200px 600px at 50% -10%, #fffdfa 0%, transparent 60%);
+  background-attachment: fixed;
 }
 
-/* Scrollbar discreta */
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: var(--stone-300) transparent;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  letter-spacing: -0.01em;
+}
+
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-color: var(--brand-500);
+}
+
+.rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--stone-200) 12%, var(--stone-200) 88%, transparent);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--sunken) 25%, var(--stone-100) 37%, var(--sunken) 63%);
+  background-size: 200% 100%;
 }

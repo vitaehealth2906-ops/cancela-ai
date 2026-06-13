@@ -1,9 +1,10 @@
 // Transcrição de áudio/vídeo via Whisper na API da Groq (tier gratuito).
 //
 // A Groq expõe um endpoint compatível com a OpenAI e roda o whisper-large-v3.
-// Aceita o arquivo de vídeo diretamente (mp4, webm, mpeg, etc.) e extrai o
-// áudio do lado do servidor — não precisamos de ffmpeg para o caso comum.
+// Recebe o ÁUDIO já extraído/comprimido (Blob) — não o vídeo bruto.
 // Limite no tier gratuito: 25 MB por arquivo.
+
+import { ErroApi } from "./erros";
 
 export interface TranscriptSegment {
   inicio: number; // segundos
@@ -20,52 +21,55 @@ export interface TranscriptResult {
 const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MODELO = "whisper-large-v3";
 const LIMITE_BYTES = 25 * 1024 * 1024; // 25 MB (tier gratuito da Groq)
+const TIMEOUT_MS = 40_000;
 
-// Recebe o ÁUDIO já extraído/comprimido (Blob), não o vídeo bruto.
 export async function transcreverAudio(
   audio: Blob,
   filename = "audio.mp3"
 ): Promise<TranscriptResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error(
-      "GROQ_API_KEY não configurada. Crie uma chave em console.groq.com e adicione no .env.local."
-    );
+    throw new ErroApi("CONFIG", "GROQ_API_KEY não configurada.");
   }
 
   if (audio.size > LIMITE_BYTES) {
-    throw new Error(
-      `O áudio extraído ficou com ${(audio.size / 1024 / 1024).toFixed(
-        1
-      )} MB, acima do limite de 25 MB. ` +
-        "O vídeo é muito longo — recorte um trecho menor."
-    );
+    throw new ErroApi("AUDIO_GRANDE", "O áudio extraído passou de 25 MB.");
   }
 
   const form = new FormData();
   form.append("file", audio, filename);
   form.append("model", MODELO);
-  // verbose_json devolve os segmentos com marcação de tempo,
-  // o que permite localizar exatamente ONDE está cada risco.
+  // verbose_json devolve segmentos com marcação de tempo (localiza cada risco).
   form.append("response_format", "verbose_json");
 
-  const resp = await fetch(GROQ_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e) {
+    // Timeout/abort ou falha de rede — não vaza detalhe do provedor.
+    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+      throw new ErroApi("TIMEOUT", "A transcrição demorou mais que o esperado.");
+    }
+    throw new ErroApi("REDE", "Falha de conexão ao transcrever o áudio.");
+  }
 
   if (!resp.ok) {
-    const detalhe = await resp.text().catch(() => "");
-    throw new Error(
-      `Falha na transcrição (HTTP ${resp.status}). ${detalhe.slice(0, 300)}`
-    );
+    // Nunca repassamos o corpo cru da Groq para o cliente.
+    if (resp.status === 429) {
+      throw new ErroApi("RATE", "Limite de transcrições atingido. Tente em 1 minuto.");
+    }
+    throw new ErroApi("REDE", `Falha na transcrição (HTTP ${resp.status}).`);
   }
 
   const data = (await resp.json()) as {
-    text: string;
+    text?: string;
     language?: string;
-    segments?: Array<{ start: number; end: number; text: string }>;
+    segments?: Array<{ start: number; end: number; text?: string }>;
   };
 
   return {
@@ -74,7 +78,7 @@ export async function transcreverAudio(
     segmentos: (data.segments ?? []).map((s) => ({
       inicio: s.start,
       fim: s.end,
-      texto: s.text.trim(),
+      texto: (s.text ?? "").trim(),
     })),
   };
 }

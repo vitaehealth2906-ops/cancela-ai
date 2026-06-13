@@ -1,14 +1,19 @@
-// Análise de risco de cancelamento com Claude — agora CALIBRADA pelo público.
+// Análise de risco de cancelamento com Claude — CALIBRADA pelo público.
 //
 // Recebe a transcrição do vídeo + os insights do público + a persona/narrativas
 // e julga o conteúdo À LUZ DESSE público específico (sem viés). O mesmo trecho
 // pode ter alta chance para um público e baixa para outro.
+//
+// Modelo: Opus 4.8, effort "medium" (era "high") + max_tokens 6000 (era 16000).
+// É a chamada mais pesada e a maior candidata a estourar o limite de 60s da
+// Vercel free — o corte de effort/tokens + timeout de cliente evitam o 504.
 
 import Anthropic from "@anthropic-ai/sdk";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { TranscriptResult } from "./transcribe";
 import type { Insights, Persona, Analise } from "./types";
+import { ErroApi } from "./erros";
 
 const AchadoSchema = z.object({
   titulo: z.string().describe("Resumo curto do risco identificado"),
@@ -88,9 +93,9 @@ export async function analisarRisco(
   persona: Persona
 ): Promise<Analise> {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY não configurada.");
+    throw new ErroApi("CONFIG", "ANTHROPIC_API_KEY não configurada.");
   }
-  const client = new Anthropic();
+  const client = new Anthropic({ timeout: 50_000, maxRetries: 1 });
 
   const segmentosTexto = transcricao.segmentos
     .map((s) => `[${s.inicio.toFixed(1)}s–${s.fim.toFixed(1)}s] ${s.texto}`)
@@ -122,17 +127,15 @@ ${persona.narrativas.map((n, i) => `${i + 1}. ${n.titulo}: ${n.descricao}`).join
 
   const resp = await client.messages.parse({
     model: "claude-opus-4-8",
-    max_tokens: 16000,
+    max_tokens: 6000,
     thinking: { type: "adaptive" },
     system: [{ type: "text", text: RUBRICA, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: entrada }],
-    output_config: { effort: "high", format: zodOutputFormat(AnaliseSchema) },
+    output_config: { effort: "medium", format: zodOutputFormat(AnaliseSchema) },
   });
 
   if (!resp.parsed_output) {
-    throw new Error(
-      "O modelo não retornou uma análise válida (possível recusa ou limite de tokens)."
-    );
+    throw new ErroApi("MODELO", "O modelo não retornou uma análise válida.");
   }
   return resp.parsed_output;
 }

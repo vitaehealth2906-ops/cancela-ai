@@ -3,13 +3,19 @@
 //
 // A ideia: entender QUEM é o público antes de julgar o vídeo, para que a
 // análise seja calibrada por esse público — e não por "qualquer coisa".
+//
+// Modelo: Claude Haiku 4.5 — rápido e barato. Persona é descrição estruturada,
+// não exige o Opus; isso derruba a espera de ~2-3 min para poucos segundos.
+// Haiku NÃO aceita output_config.effort nem thinking adaptativo (400) — por isso
+// passamos apenas output_config.format.
 
 import Anthropic from "@anthropic-ai/sdk";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { Insights, Persona } from "./types";
+import { ErroApi } from "./erros";
 
-const PersonaSchema = z.object({
+export const PersonaSchema = z.object({
   resumo: z
     .string()
     .describe("Quem é esse público, em 2-3 frases (perfil, valores, expectativas)"),
@@ -46,13 +52,8 @@ PRINCÍPIOS:
 
 Responda em português do Brasil.`;
 
-export async function gerarPersona(insights: Insights): Promise<Persona> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY não configurada.");
-  }
-  const client = new Anthropic();
-
-  const entrada = `DADOS DO PÚBLICO (insights do Instagram do criador):
+export function entradaPersona(insights: Insights): string {
+  return `DADOS DO PÚBLICO (insights do Instagram do criador):
 - Nicho / tema: ${insights.nicho || "(não informado)"}
 - Tipo de conteúdo: ${insights.tipoConteudo || "(não informado)"}
 - Principais cidades: ${insights.cidades || "(não informado)"}
@@ -61,23 +62,31 @@ export async function gerarPersona(insights: Insights): Promise<Persona> {
 - Gênero predominante: ${insights.genero || "(não informado)"}
 - Faixa de seguidores: ${insights.seguidores || "(não informado)"}
 - Tom do conteúdo: ${insights.tom || "(não informado)"}
-- Descrição livre do público/conteúdo: ${insights.descricao || "(não informado)"}
+- Descrição livre do público/conteúdo: ${insights.descricao || "(não informado)"}`;
+}
+
+export async function gerarPersona(insights: Insights): Promise<Persona> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new ErroApi("CONFIG", "ANTHROPIC_API_KEY não configurada.");
+  }
+  const client = new Anthropic({ timeout: 45_000, maxRetries: 1 });
+
+  const entrada = `${entradaPersona(insights)}
 
 Monte a persona e as narrativas de cancelamento específicas desse público.`;
 
   const resp = await client.messages.parse({
-    model: "claude-opus-4-8",
-    max_tokens: 8000,
-    thinking: { type: "adaptive" },
+    model: "claude-haiku-4-5",
+    max_tokens: 4000,
     system: [
       { type: "text", text: RUBRICA_PERSONA, cache_control: { type: "ephemeral" } },
     ],
     messages: [{ role: "user", content: entrada }],
-    output_config: { effort: "medium", format: zodOutputFormat(PersonaSchema) },
+    output_config: { format: zodOutputFormat(PersonaSchema) },
   });
 
   if (!resp.parsed_output) {
-    throw new Error("Não foi possível gerar a persona do público.");
+    throw new ErroApi("MODELO", "Não foi possível gerar a persona do público.");
   }
   return resp.parsed_output;
 }
